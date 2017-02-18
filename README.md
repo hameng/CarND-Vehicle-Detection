@@ -1,18 +1,5 @@
 # Vehicle Detection
-[![Udacity - Self-Driving Car NanoDegree](https://s3.amazonaws.com/udacity-sdc/github/shield-carnd.svg)](http://www.udacity.com/drive)
 
-
-In this project, your goal is to write a software pipeline to detect vehicles in a video (start with the test_video.mp4 and later implement on full project_video.mp4), but the main output or product we want you to create is a detailed writeup of the project.  Check out the [writeup template](https://github.com/udacity/CarND-Vehicle-Detection/blob/master/writeup_template.md) for this project and use it as a starting point for creating your own writeup.  
-
-Creating a great writeup:
----
-A great writeup should include the rubric points as well as your description of how you addressed each point.  You should include a detailed description of the code used in each step (with line-number references and code snippets where necessary), and links to other supporting documents or external references.  You should include images in your writeup to demonstrate how your code works with examples.  
-
-All that said, please be concise!  We're not looking for you to write a book here, just a brief description of how you passed each rubric point, and references to the relevant code :). 
-
-You can submit your writeup in markdown or use another method and submit a pdf instead.
-
-The Project
 ---
 
 The goals / steps of this project are the following:
@@ -24,10 +11,106 @@ The goals / steps of this project are the following:
 * Run your pipeline on a video stream (start with the test_video.mp4 and later implement on full project_video.mp4) and create a heat map of recurring detections frame by frame to reject outliers and follow detected vehicles.
 * Estimate a bounding box for vehicles detected.
 
-Here are links to the labeled data for [vehicle](https://s3.amazonaws.com/udacity-sdc/Vehicle_Tracking/vehicles.zip) and [non-vehicle](https://s3.amazonaws.com/udacity-sdc/Vehicle_Tracking/non-vehicles.zip) examples to train your classifier.  These example images come from a combination of the [GTI vehicle image database](http://www.gti.ssr.upm.es/data/Vehicle_database.html), the [KITTI vision benchmark suite](http://www.cvlibs.net/datasets/kitti/), and examples extracted from the project video itself.   You are welcome and encouraged to take advantage of the recently released [Udacity labeled dataset](https://github.com/udacity/self-driving-car/tree/master/annotations) to augment your training data.  
+###Decide what Features to extract from Images  
+I tried to use YUV color space to extract color histogram features, spatially binned features and HOG features
 
-Some example images for testing your pipeline on single frames are located in the `test_images` folder.  To help the reviewer examine your work, please save examples of the output from each stage of your pipeline in the folder called `ouput_images`, and include them in your writeup for the project by describing what each image shows.    The video called `project_video.mp4` is the video your pipeline should work well on.  
+Car:
+![cal_cameraimage](readme_pic/all_features.png)  
 
-**As an optional challenge** Once you have a working pipeline for vehicle detection, add in your lane-finding algorithm from the last project to do simultaneous lane-finding and vehicle detection!
+Non_car:
+![cal_cameraimage](readme_pic/all_features_noncar.png)  
 
-**If you're feeling ambitious** (also totally optional though), don't stop there!  We encourage you to go out and take video of your own, and show us how you would implement this project on a new video!
+As you can see the HOG features is the easiest features to tell if the object is a car or not. So I decide to extract HOG features only from each frame.
+
+###Histogram of Oriented Gradients (HOG)
+
+####1. How to extract HOG features from the training images.
+
+The function `get_files()` (In[5] in p5.ipynb) is used for collecting all PNG files full path in `vehicle` and `non-vehicle` directories.
+
+Then I read the image data by using the function `mpimg.imread(png_file, format="uint8")` (In[9] in p5.ipynb).
+
+The function `extract_features()`(In[5] in p5.ipynb) is for convert the image data from RGB to YUV then use `skimage.hog()` with parameters:`orientations=8`, `pixels_per_cell=(8, 8)`, `cells_per_block=(2, 2)` to generate HOG data from Y, U, V channels separately.
+
+Car HOG:  
+![cimage](readme_pic/hog_car.png)  
+Non_Car HOG:  
+![cimage](readme_pic/hog_noncar.png)  
+
+I used all three channels (Y-HOG,U-HOG, V-HOG) as the training features. After getting the training data I used `sklearn.preprocessing.StandardScaler()` to normalize the data. (In[7] in p5.ipynb)
+
+
+####2. How to train a classifier using the selected HOG features  
+I used the function `sklearn.model_selection.train_test_split()` to split
+the featues and labels into training and test set. (In[8] in p5.ipynb)
+
+label length: 17760  
+feature lenght: 17760   
+train label length: 14208.  
+train feature lenght: 14208.   
+test label length: 3552.   
+test feature lenght: 3552.   
+num of features: 4704    
+
+Then I choose Linear SVM as classifier and use all default parameters. (In[11] in p5.ipynb) And Test Accuracy of LinearSVC is 0.9865.
+
+
+###Sliding Window Search
+
+####1.How to implement a sliding window search.  
+
+I use the function `slide_window(img, x_start_stop=[None, None], y_start_stop=[None, None],  xy_window=(64, 64), xy_overlap=(0.8, 0.8)` (In[14] in p5.ipynb) to generate a list of bounding boxes for the search windows.
+
+Then I have another function `get_roi_windows(roi, img)` to decide the ROI and feed the arguments to `slide_window()` to create the final searching windows positions.
+
+```python  
+# fomrat:
+# [x_start, x_stop], [y_start, y_stop],(window_size)
+roi = [([400, 500], [600, 1280], (64, 64)),
+       ([400, 500], [640, 1280], (96, 96)),
+       ([400, 500], [640, 1280], (128, 128))]
+```
+As you can see I setup three main ROIs.
+The window sizes are 64x64, 96x96 and 128x128. Overlap is 80%.
+![cimage](readme_pic/check_windows.png)  
+
+####2. How to Find Cars by Using Sliding Window Search
+
+Please see the function `search_windows()` (In[16])  
+
+1. Use sliding windows to get the ROI that needs to be analyzed.  
+2. Convert sliding window image from RGB(uint8) to YUV. 
+3. Extract HOG fetrues from thoese 3 channels (YUV). 
+4. Send those features to classifier to check the   prediction value
+5. Save the window position if prediction is True  
+
+![cimage](readme_pic/search_windows.png)
+
+####3. Multiple Detections & False Positives
+As you can see from the screenshot shown above there are several windows on each car. And sometimes there might be some windows located in a Non-Car position.  
+So I implement the heatmap to figure out this issue.  
+The function `get_heatmap(img, bbox_list, thresh=5)` (In[50]) is to collect all detected windows and add "heat" (+=1) for all pixels within those detected windows. The return a list of bounding boxes.  
+The "hot" parts of the map are where the cars are, and by imposing a threshold, you can reject areas affected by false positives.  
+After getting heatmap, use `scipy.ndimage.measurements.label(heatmap)` to get final bounding boxes for detected cars.  
+
+
+*The green windows are the original detected windows  
+*Blue windows is the one created by using heatmap
+![cimage](readme_pic/heatmap_finalresult.png)
+
+---
+
+### Video Implementation
+
+Here's a [link to my video result](output_images/project_video_result.mp4)
+
+For smoothing the windows I use `deque(maxlen=4)` to store the heatmap data from previous three frames. (In[65] in p5.ipynb). I integrated heatmap from Four frames and get a better fit window.
+
+
+---
+
+###Discussion
+1. I still see some false positive windows showed in some frames. I can tune my Classfier and the threshold number in the heatmap implementation.
+2. I only use HOG as the traning feature. Becasue I did try other features but always cause over-fitted probelem.
+
+
