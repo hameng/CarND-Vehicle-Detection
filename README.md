@@ -64,7 +64,7 @@ I use the function `slide_window(img, x_start_stop=[None, None], y_start_stop=[N
 Then I have another function `get_roi_windows(roi, img)` to decide the ROI and feed the arguments to `slide_window()` to create the final searching windows positions.
 
 ```python  
-# fomrat:
+# Format:
 # [x_start, x_stop], [y_start, y_stop],(window_size)
 roi = [([400, 500], [600, 1280], (64, 64)),
        ([400, 500], [640, 1280], (96, 96)),
